@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Sync App</title>
+  </head>
+  <body>
+    <script>
+      const socket = new WebSocket('ws://localhost:3001');
+
+      // Send the JSON object to the server
+      function sendData() {
+        const data = { hello: 'world' };
+        socket.send(JSON.stringify(data));
+      }
+
+      // Handle incoming messages from the server
+      socket.onmessage = event => {
+        const data = JSON.parse(event.data);
+        console.log(`Received data:`, data);
+      }
+
+      // Send the JSON object every 5 seconds
+      setInterval(sendData, 5000);
+    </script>
+  </body>
+</html>
