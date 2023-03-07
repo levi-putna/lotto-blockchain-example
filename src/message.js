@@ -18,6 +18,12 @@ class Message {
         return JSON.stringify(message);
     }
 
+    static deserialize(serializedMessage){
+        const { type, data, id } = serializedMessage;
+        const message = new Message(type, data);
+        return message;
+    }
+
     static add(data) {
         return new Message('add', data);
     }
