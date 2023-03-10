@@ -20,15 +20,33 @@ class Blockchain {
     }
 
     addBlock(data) {
-        if(this.privateKey){
-            console.error("Error creating new block. A privateKey is required fro signing the block");
-        }
         const newBlock = new Block(this.chain.length, new Date().toString(), data);
         newBlock.previousHash = this.getLatestBlock().hash;
         newBlock.hash = newBlock.calculateHash();
         newBlock.signBlock(this.privateKey);
         this.chain.push(newBlock);
         return newBlock;
+    }
+
+    /**
+     * We want to remove all items from the end of the array until an object with a matching hash value is found. 
+     * The targetHash variable contains the hash we're looking for.
+     * @param {*} targetHash 
+     */
+    removeBlock(targetHash) {
+        let removed = false;
+        while (this.chain.length > 0) {
+            const lastItem = this.chain[this.chain.length - 1];
+            if (lastItem.hash === targetHash) {
+                this.chain.pop();
+                removed = true;
+                break;
+            } else {
+                this.chain.pop();
+                removed = true;
+            }
+        }
+        return removed;
     }
 
     /**
@@ -45,17 +63,17 @@ class Blockchain {
      */
     addBlockFromNetwork(block) {
         if (block.index !== this.getLatestBlock().index + 1) {
-            console.log("Block index is not valid");
+            console.error("Block index is not valid");
             return false;
         }
 
         if (block.previousHash !== this.getLatestBlock().hash) {
-            console.log("Block previous hash is not valid");
+            console.error("Block previous hash is not valid");
             return false;
         }
 
         if (block.hash !== block.calculateHash()) {
-            console.log("Block hash is not valid");
+            console.error("Block hash is not valid");
             return false;
         }
 

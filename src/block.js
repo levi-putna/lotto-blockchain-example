@@ -36,17 +36,18 @@ class Block {
     }
 
     signBlock(privateKey) {
-        this.signature = privateKey.sign(this.calculateHash(), "base64");
+        this.signature = (privateKey) ? privateKey.sign(this.calculateHash(), "base64") : null;
     }
 
-    isValidBlock() {
-        const rsa = new NodeRSA(this.publicKey);
-        return rsa.verify(this.calculateHash(), this.signature, "utf8", "base64");
+    isValidBlock(publicKey) {
+        if(!this.signature) return false;
+        return publicKey.verify(this.calculateHash(), this.signature, "utf8", "base64");
     }
 
     static deserialize(serializedBlock) {
-        const { index, timestamp, data, previousHash, hash, publicKey } = serializedBlock;
+        const { index, timestamp, data, previousHash, hash, publicKey, signature } = serializedBlock;
         const block = new Block(index, timestamp, data, previousHash, publicKey);
+        block.signature = signature;
         block.hash = hash;
         return block;
     }

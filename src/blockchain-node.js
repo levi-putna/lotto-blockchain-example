@@ -11,19 +11,28 @@ const fs = require('fs');
 
 class BlockchainNode {
 
-    constructor(port, host = 'localhost:3000', privateKey = null) {
-
+    /**
+    * Creates a new instance of the client constructor.
+    * @constructor
+    * @param {object} options - The configuration options for the client.
+    * @param {number} options.port - The port number to use for the connection.
+    * @param {string} [options.host='localhost:3000'] - The host address for the connection. Defaults to 'localhost:3000' if not provided.
+    * @param {string} [options.privateKey=null] - The private key to use for authentication. Defaults to null if not provided.
+    * @param {boolean} [options.verbose=false] - Whether to enable verbose logging. Defaults to false if not provided.
+    */
+    constructor({ port, host = 'localhost:3000', privateKey = null, verbose = false }) {
         // Keep track of the JSON object
         this.data = {};
         this.privateKey = privateKey;
+        this.verbose = verbose;
 
         // If there is not upstream host, this server will become the master, so we need to setup the initial blockchain state. 
         if (!host) {
             // Create a private key. Only nodes with this key will be able to add to the blockchain
-            
+
             const lottery = {
                 lottery: "BlockLotto",
-                draw:1,
+                draw: 1,
                 creationDate: new Date(),
                 prizePool: {
                     value: 1000000,
@@ -40,19 +49,15 @@ class BlockchainNode {
                 },
             }
 
-            // Create keys
-            if(!this.privateKey){
-                this.privateKey = new NodeRSA({b: 512});
-            }
-            
-            const publicKey = this.privateKey.exportKey("public");
-            // Log out key to be saved
-            console.log(this.privateKey.exportKey('pkcs8-private-pem'));
-            // Save the private key to a file in PKCS#8-encoded PEM format
-            fs.writeFileSync('private_key.pem', this.privateKey.exportKey('pkcs8-private-pem'));
+            // // Create keys
+            // if(!this.privateKey){
+            //     this.privateKey = new NodeRSA({b: 512});
+            // }
+
+            this.publicKey = this.privateKey.exportKey("public");
 
             // Create a new blockchain object
-            this.data = new Blockchain(lottery, publicKey, this.privateKey);
+            this.data = new Blockchain(lottery, this.publicKey, this.privateKey);
         }
 
         // Create an Express app
@@ -66,24 +71,28 @@ class BlockchainNode {
         // Middleware to parse JSON body
         app.use(express.json());
 
-        app.post('/api/lottery', (req, res) => {
+        app.post('/api/block', (req, res) => {
             const { name, numbers } = req.body;
 
             if (!name || !numbers) return res.status(400).send('Name and number fields are required');
-
-
+            (this.verbose) ? console.log("New Block Request") : null;
             const newBlock = this.data.addBlock({ name, numbers });
 
             // Broadcast to other downstream clients, but ignore the initial client that sent the message.
             let message = new Message("add", newBlock.serialize())
             this.broadcast(message);
 
-
             if (this.upstream && this.upstream.OPEN) {
                 this.upstream.send(message.toJSON());//update server connection
             }
 
             res.status(201).send(newBlock.serialize());
+        });
+
+        app.get('/api/block', (req, res) => {
+            const { name, numbers } = req.body;
+
+            res.status(200).send(this.data.serialize());
         });
 
         // Start the server
@@ -107,16 +116,17 @@ class BlockchainNode {
             // Handle messages from the client
             socket.on('message', message => {
 
-                // Update the JSON object
-                this.processMessage(message)
+                // Update the JSON object and share if valid
+                if (this.processMessage(message, socket)) {
+                    // Broadcast to other downstream clients, but ignore the initial client that sent the message. 
+                    let newMessage = Message.deserialize(JSON.parse(message));
+                    this.broadcast(newMessage, socket);
 
-                // Broadcast to other downstream clients, but ignore the initial client that sent the message. 
-                let newMessage = Message.deserialize(JSON.parse(message));
-                this.broadcast(newMessage, socket);
-
-                if (this.upstream && this.upstream.OPEN) {
-                    this.upstream.send(newMessage.toJSON());//update server connection
+                    if (this.upstream && this.upstream.OPEN) {
+                        this.upstream.send(newMessage.toJSON());//update server connection
+                    }
                 }
+
             });
 
             // Handle disconnections
@@ -127,7 +137,6 @@ class BlockchainNode {
 
 
         // ----- Upstream Client
-
 
         // Setup Upstream connection
         if (host) {
@@ -141,7 +150,7 @@ class BlockchainNode {
 
             // Receive messages from the server
             this.upstream.on('message', message => {
-                this.processMessage(message)
+                this.processMessage(message, this.upstream)
 
                 let newMessage = Message.deserialize(JSON.parse(message));
                 this.broadcast(newMessage);
@@ -155,31 +164,47 @@ class BlockchainNode {
     //     this.broadcast();
     // }
 
-    processMessage(message) {
+
+
+    processMessage(message, socket = null) {
         let parsedMessage = JSON.parse(message);
-        console.log('Message received: ' + parsedMessage.type, parsedMessage.data);
+        (this.verbose) ? console.log('Message received: ' + parsedMessage.type, parsedMessage.data) : null;
 
         switch (parsedMessage.type) {
             case 'add':
                 const networkNode = Block.deserialize(parsedMessage.data);
-                this.data.addBlockFromNetwork(networkNode);
+                if (networkNode.isValidBlock(new NodeRSA(this.data.publicKey))) {
+                    this.data.addBlockFromNetwork(networkNode);
+                } else {
+                    (this.verbose) ? console.log("Block Rejected") : null;
+                    let newMessage = new Message('reject', parsedMessage.data);
+                    socket.send(newMessage.toJSON());//send a message back about the invalid
+                    return false;
+                }
+
                 break;
             case 'sync':
                 const networkBlockchain = Blockchain.deserialize(parsedMessage.data);
+                networkBlockchain.privateKey = this.privateKey; // We need to add the local private key back in, it is not serialize
                 this.data = networkBlockchain;
                 break;
             case 'reject':
                 const badNode = Block.deserialize(parsedMessage.data);
-                // TODO return to the original socket with a fail message
+                const { hash } = badNode;
+                (this.verbose) ? console.log("rejected block received " + hash) : null;
+
+                let removeBlock = this.data.removeBlock(hash);
                 break;
             default:
                 console.error('Invalid message type received:', parsedMessage.type);
+                return false;
                 break;
         }
+        return true;
     }
 
     publish(value) {
-        (verbose) ? console.log('Data changed: ' + JSON.stringify(value)) : null;
+        (this.verbose) ? console.log('Data changed: ' + JSON.stringify(value)) : null;
 
         this.data = value;
         // Send a message to the server
@@ -190,6 +215,7 @@ class BlockchainNode {
     // Broadcast the current data object to all connected clients
     broadcast(message, socket = null) {
         const data = message.toJSON();
+
         this.downstream.clients.forEach(client => {
             if (socket !== client) { // ignore a particular client
                 client.send(data);
