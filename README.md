@@ -1,8 +1,8 @@
-#Blockchain Lottery
+# Blockchain Lottery
 
 This is a proof of concept repository for a simple blockchain lottery that I created for a blog post I wrote [www.twistedbrackets.com/decentralised-lottery-with-blockchain/](www.twistedbrackets.com/decentralised-lottery-with-blockchain/). The lottery is designed to have a single draw and limited functionality, focusing on the creation and validation of entries in the blockchain. 
 
-#Scope
+# Scope
 
 To manage the scope for this proof of concept, we have defined some parameters we will work within:
 
@@ -19,7 +19,7 @@ We will tackle this in two parts:
 * Create the classes to manage the blockchain data structure.
 * Create a NodeJs express server to act as our blockchain nodes and manage block addition, validation and propagation. The server will use sockets to communicate with each other and a simple REST API to contribute to the chain. The socket connection in the proof of concept will be kept simple, not allowing for loss of connection and reconnection to the network.
 
-#Usage
+# Usage
 
 The script uses the Commander library to parse command-line arguments. The available options are:
 
